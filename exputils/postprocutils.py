@@ -16,7 +16,7 @@ from tqdm import tqdm
 from femvf.models.transient.base import BaseTransientModel
 from femvf import statefile as sf
 
-import h5utils
+from . import h5utils
 
 def postprocess(
         out_file: h5py.Group,
