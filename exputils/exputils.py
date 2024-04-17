@@ -18,13 +18,10 @@ class BaseParameters:
     """
 
     DATA_TYPES: ClassVar[Mapping[str, Any]] = {}
+    DATA_FORMAT_STRS: ClassVar[Mapping[str, str]] = {}
     STR_DELIMITER: ClassVar[str] = '--'
 
-    def __init__(
-        self,
-        parameters: Mapping[str, Any],
-        parameter_format_strs: Optional[Mapping[str, str]] = None,
-    ):
+    def __init__(self, parameters: Mapping[str, Any]):
         if isinstance(parameters, dict):
             _data = self._init_from_dict(parameters)
         elif isinstance(parameters, BaseParameters):
@@ -48,19 +45,6 @@ class BaseParameters:
         _data = {key: dtype(_data[key]) for key, dtype in self.DATA_TYPES.items()}
 
         self._data = _data
-
-        # Initialize string formatters for each parameter
-        if parameter_format_strs is None:
-            parameter_format_strs = {}
-        param_keys = list(self.data.keys())
-        data_types = [self.DATA_TYPES[key] for key in param_keys]
-        format_strs = [
-            parameter_format_strs.get(key, self._default_format_str(data_type))
-            for key, data_type in zip(param_keys, data_types)
-        ]
-        self.DATA_STR_FORMATS = {
-            key: format_str for key, format_str in zip(param_keys, format_strs)
-        }
 
     @classmethod
     def _init_from_dict(cls, data):
@@ -202,7 +186,9 @@ class BaseParameters:
         """
         Return a string representing a parameter value
         """
-        format_str = self.DATA_STR_FORMATS[key]
+        dtype = self.DATA_TYPES[key]
+        default_format_str = self._default_format_str(dtype)
+        format_str = self.DATA_FORMAT_STRS.get(key, default_format_str)
         value = self.data[key]
         return format(value, format_str)
 
@@ -257,7 +243,9 @@ class BaseParameters:
         return len(self.data)
 
 
-def make_parameters(data_types: Mapping[str, type]):
+def make_parameters(
+    data_types: Mapping[str, type], data_format_strs: Mapping[str, str]
+):
     """
     Return a class representing a parameter set
 
@@ -269,6 +257,7 @@ def make_parameters(data_types: Mapping[str, type]):
 
     class Parameters(BaseParameters):
         DATA_TYPES = data_types
+        DATA_FORMAT_STRS = data_format_strs
 
     return Parameters
 
