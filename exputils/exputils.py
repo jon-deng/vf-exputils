@@ -7,6 +7,7 @@ import itertools
 
 import numpy as np
 
+
 class BaseParameters:
     """
     Represent a parameter set used for running an experiment
@@ -15,10 +16,15 @@ class BaseParameters:
     ----------
     parameters: Mapping[str, Any]
     """
+
     DATA_TYPES: ClassVar[Mapping[str, Any]] = {}
     STR_DELIMITER: ClassVar[str] = '--'
 
-    def __init__(self, parameters: Mapping[str, Any]):
+    def __init__(
+        self,
+        parameters: Mapping[str, Any],
+        parameter_format_strs: Optional[Mapping[str, str]] = None,
+    ):
         if isinstance(parameters, dict):
             _data = self._init_from_dict(parameters)
         elif isinstance(parameters, BaseParameters):
@@ -32,23 +38,29 @@ class BaseParameters:
         # have 1-to-1 keys
         for key in _data:
             if key not in self.DATA_TYPES:
-                raise ValueError(
-                    f"{key} in input is not a valid parameter name"
-                )
+                raise ValueError(f"{key} in input is not a valid parameter name")
 
         for key in self.DATA_TYPES:
             if key not in _data:
-                raise ValueError(
-                    f"parameter name {key} was not found in input"
-                )
+                raise ValueError(f"parameter name {key} was not found in input")
 
         # Convert the parameter dictionary to the correct data types
-        _data = {
-            key: dtype(_data[key])
-            for key, dtype in self.DATA_TYPES.items()
-        }
+        _data = {key: dtype(_data[key]) for key, dtype in self.DATA_TYPES.items()}
 
         self._data = _data
+
+        # Initialize string formatters for each parameter
+        if parameter_format_strs is None:
+            parameter_format_strs = {}
+        param_keys = list(self.data.keys())
+        data_types = [self.DATA_TYPES[key] for key in param_keys]
+        format_strs = [
+            parameter_format_strs.get(key, self._default_format_str(data_type))
+            for key, data_type in zip(param_keys, data_types)
+        ]
+        self.DATA_STR_FORMATS = {
+            key: format_str for key, format_str in zip(param_keys, format_strs)
+        }
 
     @classmethod
     def _init_from_dict(cls, data):
@@ -73,19 +85,16 @@ class BaseParameters:
             for n0, n1 in zip(nn[:-1], nn[1:])
         ]
         label_lengths = [len(key) for key in cls.DATA_TYPES]
-        str_labels = [
-            str_part[:n] for str_part, n in zip(str_parts, label_lengths)
-        ]
-        str_values = [
-            str_part[n:]
-            for str_part, n in zip(str_parts, label_lengths)
-        ]
+        str_labels = [str_part[:n] for str_part, n in zip(str_parts, label_lengths)]
+        str_values = [str_part[n:] for str_part, n in zip(str_parts, label_lengths)]
 
         data_str = {
-            key:
-                dtype._init_from_str(str_value) if issubclass(dtype, BaseParameters)
-                else str_value
-            for key, str_value, dtype in zip(str_labels, str_values, cls.DATA_TYPES.values())
+            key: dtype._init_from_str(str_value)
+            if issubclass(dtype, BaseParameters)
+            else str_value
+            for key, str_value, dtype in zip(
+                str_labels, str_values, cls.DATA_TYPES.values()
+            )
         }
         return data_str
 
@@ -106,9 +115,7 @@ class BaseParameters:
         # Recursively get the dictionary representation of the parameters
         # and any sub-parameters
         _data = {
-            key:
-                value.rdata if isinstance(value, BaseParameters)
-                else value
+            key: value.rdata if isinstance(value, BaseParameters) else value
             for key, value in self._data.items()
         }
         return _data
@@ -125,22 +132,14 @@ class BaseParameters:
         new_data = self.data.copy()
 
         root_params = {
-            key: value for key, value in new_params.items()
-            if '/' not in key
+            key: value for key, value in new_params.items() if '/' not in key
         }
         for key, value in root_params.items():
             new_data[key] = value
 
-        nest_params = {
-            key: value for key, value in new_params.items()
-            if '/' in key
-        }
-        nest_root_keys = {
-            key.split('/')[0] for key in nest_params.keys()
-        }
-        nest_keys = {
-            root_key: [] for root_key in nest_root_keys
-        }
+        nest_params = {key: value for key, value in new_params.items() if '/' in key}
+        nest_root_keys = {key.split('/')[0] for key in nest_params.keys()}
+        nest_keys = {root_key: [] for root_key in nest_root_keys}
         for key in nest_params:
             split_key = key.split('/')
             root_key = split_key[0]
@@ -149,8 +148,7 @@ class BaseParameters:
 
         for root_key, sub_keys in nest_keys.items():
             _new_sub_params = {
-                sub_key: nest_params[f'{root_key}/{sub_key}']
-                for sub_key in sub_keys
+                sub_key: nest_params[f'{root_key}/{sub_key}'] for sub_key in sub_keys
             }
             new_data[root_key] = new_data[root_key].substitute(_new_sub_params)
 
@@ -163,7 +161,7 @@ class BaseParameters:
     def __repr__(self):
         return self.data.__repr__()
 
-    def to_str(self, keys: Optional[Container[str]]=None):
+    def to_str(self, keys: Optional[Container[str]] = None):
         """
         Return a string representation of the parameters
 
@@ -173,42 +171,40 @@ class BaseParameters:
         """
         if keys is None:
             keys = self.DATA_TYPES.keys()
-        return self.STR_DELIMITER.join([
-            self._format_key_to_str(key) for key in self.DATA_TYPES
-            if key in keys
-        ])
+        return self.STR_DELIMITER.join(
+            [self._format_key_to_str(key) for key in self.DATA_TYPES if key in keys]
+        )
 
     def _format_key_to_str(self, key: str) -> str:
         """
         Return a string representing the parameter indicated by `key`
         """
-        dtype = self.DATA_TYPES[key]
-        value = self[key]
-        return f'{key}{self._format_value_to_str(value, dtype)}'
+        return f'{key}{self._format_value_to_str(key)}'
 
-    def _format_value_to_str(
-            self,
-            value: Any,
-            dtype: Optional[type]=None
-        ) -> str:
+    def _default_format_str(self, dtype: type) -> str:
+        """
+        Return a string format spec
+        """
+        if issubclass(dtype, str):
+            return 's'
+        elif issubclass(dtype, float):
+            return f'.2e'
+        elif issubclass(dtype, bool):
+            return f'd'
+        elif issubclass(dtype, int):
+            return f'd'
+        elif issubclass(dtype, BaseParameters):
+            return f's'
+        else:
+            raise TypeError(f"Unknown format string for type {dtype}")
+
+    def _format_value_to_str(self, key: str) -> str:
         """
         Return a string representing a parameter value
         """
-        if dtype is None:
-            dtype = type(value)
-
-        if issubclass(dtype, str):
-            return value
-        elif issubclass(dtype, float):
-            return f'{value:.2e}'
-        elif issubclass(dtype, bool):
-            return f'{value:d}'
-        elif issubclass(dtype, int):
-            return f'{value:d}'
-        elif issubclass(dtype, BaseParameters):
-            return value.to_str()
-        else:
-            raise TypeError(f"Unknown `value` type {dtype}")
+        format_str = self.DATA_STR_FORMATS[key]
+        value = self.data[key]
+        return format(value, format_str)
 
     ## Dictionary interface
     def keys(self):
@@ -276,11 +272,13 @@ def make_parameters(data_types: Mapping[str, type]):
 
     return Parameters
 
+
 ParamValues = Union[List[Any], Any]
+
+
 def iter_parameters(
-        substitute_params: Mapping[str, ParamValues],
-        default_params: BaseParameters
-    ):
+    substitute_params: Mapping[str, ParamValues], default_params: BaseParameters
+):
     """
     Return an iterator over `BaseParameters` instances
 
@@ -306,25 +304,16 @@ def iter_parameters(
             return [x]
 
     _substitute_params = {
-        key: _require_list(values)
-        for key, values in substitute_params.items()
+        key: _require_list(values) for key, values in substitute_params.items()
     }
 
     for vals in itertools.product(*list(_substitute_params.values())):
-        yield default_params.substitute(
-            {key: val for key, val in zip(keys, vals)}
-        )
+        yield default_params.substitute({key: val for key, val in zip(keys, vals)})
 
 
 if __name__ == '__main__':
     ## Test case for a simple parameter set
-    param_dtypes = {
-        'name': str,
-        'x': float,
-        'y': float,
-        'nx': int,
-        'ny': int
-    }
+    param_dtypes = {'name': str, 'x': float, 'y': float, 'nx': int, 'ny': int}
 
     Params = make_parameters(param_dtypes)
     try:
@@ -337,7 +326,7 @@ if __name__ == '__main__':
     except ValueError as err:
         print(err)
 
-    p = Params({'x':2, 'y': 3, 'nx':2, 'ny':5, 'name': 'gottfried'})
+    p = Params({'x': 2, 'y': 3, 'nx': 2, 'ny': 5, 'name': 'gottfried'})
     print(p)
 
     ## Test case for a nested parameter set
@@ -347,11 +336,7 @@ if __name__ == '__main__':
     }
     ChildParams = make_parameters(param_dtypes_child)
 
-    param_dtypes_root = {
-        'name': str,
-        'x': float,
-        'Child': ChildParams
-    }
+    param_dtypes_root = {'name': str, 'x': float, 'Child': ChildParams}
     RootParams = make_parameters(param_dtypes_root)
 
     try:
@@ -364,7 +349,9 @@ if __name__ == '__main__':
     except ValueError as err:
         print(err)
 
-    p = RootParams({'name': 'gunther', 'x': 2, 'Child': {'childname': 'guntherjr.', 'x': 2.1}})
+    p = RootParams(
+        {'name': 'gunther', 'x': 2, 'Child': {'childname': 'guntherjr.', 'x': 2.1}}
+    )
     print(p)
     print(p.to_str())
     p2 = RootParams(p.to_str())

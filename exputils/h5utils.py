@@ -5,6 +5,7 @@ from typing import Mapping
 import numpy as np
 import h5py
 
+
 def dict_to_h5(dat: Mapping[str, np.ndarray], f: h5py.File):
     """
     Write contents of a dictionary to an hdf5 file
@@ -29,6 +30,7 @@ def dict_to_h5(dat: Mapping[str, np.ndarray], f: h5py.File):
                 f[key] = val
     return f
 
+
 def h5_to_dict(f, dat):
     """
     Read contents of an hdf5 file into a dictionary
@@ -48,22 +50,28 @@ def h5_to_dict(f, dat):
     dat.update(dat_)
     return dat
 
+
 def trans_h5file_as_path(argnum, mode):
     """
     Return a decorator that converts a file object argument to a path argument
     """
+
     def _trans_h5file_as_path(function):
         def _function(*args, **kwargs):
             assert argnum <= len(args)
 
             with h5py.File(args[argnum], mode) as f:
-                trans_args = tuple([f if ii == argnum else arg
-                                    for ii, arg in enumerate(args)])
+                trans_args = tuple(
+                    [f if ii == argnum else arg for ii, arg in enumerate(args)]
+                )
                 return function(*trans_args, **kwargs)
+
         return _function
+
 
 def all_h5dset_names(f):
     names = []
+
     def append_dset_name(name):
         if isinstance(f[name], h5py.Dataset):
             names.append(name)
@@ -71,8 +79,9 @@ def all_h5dset_names(f):
     f.visit(append_dset_name)
     return names
 
+
 def index_general_dset(dset):
-        if dset.shape == ():
-            return dset[()]
-        else:
-            return dset[:]
+    if dset.shape == ():
+        return dset[()]
+    else:
+        return dset[:]
